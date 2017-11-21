@@ -1,0 +1,42 @@
+{
+	"$schema": "http://json-schema.org/draft-04/schema#",
+	"title": "Build Status Update",
+	"type": "object",
+	"properties": {
+		"app_name": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_]+$"
+		},
+		"app_version": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_]+$"
+		},
+		"event_id": {
+			"type": "string",
+			"pattern" : "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+		},
+		"event_type": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_]+$"
+		},
+		"event_timestamp": {
+			"type": "number",
+			"minimum": 0
+		},
+		"client_id": {
+			"type": "string",
+			"pattern" : "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+		},
+		"level_id": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_]+$"
+		},
+		"position_x": {
+			"type": "number"
+		},
+		"position_y": {
+			"type": "number"
+		}
+	},
+	"required": ["app_name", "app_version", "event_id", "event_type", "event_timestamp", "client_id"]
+}

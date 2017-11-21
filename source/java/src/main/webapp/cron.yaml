@@ -1,0 +1,29 @@
+version: 1
+cron:
+
+#FYI...EC2 instances use UTC timezone by default:
+#https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/set-time.html
+
+#Run a creation command to create the table for the upcoming month for our use of
+#time-series tables in Redshift. Runs twice a day to account for any manual database
+#manipulation that might happen.  Should be relatively lightweight.
+#
+#Runs at 10:00am and 10:00pm UTC.
+    - name: "redshift-time-series-table-create"
+      url: "/redshift-time-series-table-create"
+      schedule: "0 10,20 * * *"
+      
+#Run Redshift's ANALYZE and VACUUM commands on the table from the current month to make sure
+#query performance is optimal.  Runs nightly.  Relatively heavyweight.
+#
+#Runs at 9:00am UTC = 2:00am PST = 5:00am EST
+    - name: "redshift-analyze-vacuum-tables"
+      url: "/redshift-analyze-vacuum-tables"
+      schedule: "0 9 * * *"
+
+#Run nightly reporting of anonymous statistics (does nothing if user opts out)
+#
+#Runs at 10:00am UTC = 3:00am PST = 6:00am EST
+    - name: "report-solution-statistics"
+      url: "/report-solution-statistics"
+      schedule: "0 10 * * *"

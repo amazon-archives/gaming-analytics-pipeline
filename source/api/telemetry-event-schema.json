@@ -1,0 +1,57 @@
+{
+	"$schema": "http://json-schema.org/draft-04/schema#",
+	"title": "Game Analytics Event",
+	"description": "A minimal analytics event sent from a game client or game server.",
+	"type": "object",
+	"properties": {
+		"app_name": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_.]+$",
+			"description" : "The name of the application or game this data belongs to."
+		},
+		"app_version": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_.]+$",
+			"description" : "The version of the application or game this data belongs to."
+		},
+		"event_version": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_.]+$",
+			"description" : "An API version for this event format."
+		},
+		"event_id": {
+			"type": "string",
+			"pattern" : "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+			"description" : "A random UUID that uniquely identifies this event."
+		},
+		"event_type": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_.]+$",
+			"description" : "The type of event being transmitted (e.g. 'player_death')."
+		},
+		"event_timestamp": {
+			"type": "number",
+			"minimum": 0,
+			"description" : "The time in milliseconds since the Unix epoch at which this event occcurred (set by producer of event)."
+		},
+		"client_id": {
+			"type": "string",
+			"pattern" : "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+			"description" : "A UUID that uniquely identifies this player or other data producer."
+		},
+		"level_id": {
+			"type": "string",
+			"pattern" : "^[A-Za-z0-9-_]+$",
+			"description" : "The name of the in-game level (if any) associated with this event."
+		},
+		"position_x": {
+			"type": "number",
+			"description" : "The X coordinate in world space where this event occurred in the level (if applicable)."
+		},
+		"position_y": {
+			"type": "number",
+			"description" : "The Y coordinate in world space where this event occurred in the level (if applicable)."
+		}
+	},
+	"required": ["app_name", "event_version", "event_id", "event_type", "event_timestamp", "client_id"]
+}
