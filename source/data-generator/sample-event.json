@@ -1,0 +1,12 @@
+{
+  "app_name": "SampleGame",
+  "event_id": "9279a743-e142-49fc-8e9b-1a6e24cede04",
+  "level_id": "test_level",
+  "event_timestamp": 1508785119265,
+  "event_version": "1.0",
+  "client_id": "9a9eb274-aaf7-4476-929a-d2902687aecf",
+  "position_x": 413.284,
+  "position_y": 636.826016,
+  "app_version": "1.0.0",
+  "event_type": "player_death"
+}

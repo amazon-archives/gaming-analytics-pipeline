@@ -1,6 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: (SO0035) - Ingest, Store, and Analyze Gameplay Telemetry
 Parameters:
+  RedshiftInstanceType:
+    Type: "String"
+    Description: "Instance type used for Redshift nodes."
+    Default: "dc2.large"
+    AllowedValues:
+      - "dc1.large"
+      - "dc2.large"
   RedshiftUsername:
     Type: "String"
     Default: "root"
@@ -8,24 +15,35 @@ Parameters:
     MinLength: 1
   RedshiftPassword:
     Type: "String"
-    Description: "Must contain a lowercase character, an uppercase character, and a number."
+    Description: "Must contain a lowercase character, an uppercase character, and a number. Can not contain special characters (@$%, etc)."
+    AllowedPattern: '^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?!.*[-+_!@#$%^&*.,?]).{8,}$'
     NoEcho: true
     MinLength: 8
   RedshiftWorkerPassword:
     Type: "String"
-    Description: "Must contain a lowercase character, an uppercase character, and a number."
+    Description: "Must contain a lowercase character, an uppercase character, and a number. Can not contain special characters (@$%, etc)."
+    AllowedPattern: '^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?!.*[-+_!@#$%^&*.,?]).{8,}$'
     NoEcho: true
     MinLength: 8
   RedshiftReadOnlyPassword:
     Type: "String"
-    Description: "Must contain a lowercase character, an uppercase character, and a number."
+    Description: "Must contain a lowercase character, an uppercase character, and a number. Can not contain special characters (@$%, etc)."
+    AllowedPattern: '^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?!.*[-+_!@#$%^&*.,?]).{8,}$'
     NoEcho: true
     MinLength: 8
-  ToolsInstanceKeyName:
+  KeyName:
     Type: "AWS::EC2::KeyPair::KeyName"
+    Description: "The KeyPair used to access the EC2 instances."
   ToolsInstanceCidrIp:
     Type: "String"
-    Description: "CIDR Block for access to the tools instance"
+    Description: "Allow access to the tools instance from this CIDR block. Follows the format x.x.x.x/x"
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    MinLength: 1
+  # Microsoft Windows Server 2016 with SQL Server 2017 Express
+  ToolsInstanceAMI:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Description: "Microsoft Windows Server 2016 with SQL Server 2017 Express"
+    Default: '/aws/service/ami-windows-latest/Windows_Server-2016-English-Full-SQL_2017_Express'
     MinLength: 1
   SolutionMode:
     Type: "String"
@@ -34,9 +52,6 @@ Parameters:
     AllowedValues:
       - "Demo"
       - "Prod"
-Conditions:
-  IsDemoMode:
-    !Equals ["Demo", !Ref SolutionMode]
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -44,6 +59,7 @@ Metadata:
       - Label:
           default: "Redshift"
         Parameters:
+          - RedshiftInstanceType
           - RedshiftUsername
           - RedshiftPassword
           - RedshiftWorkerPassword
@@ -51,12 +67,16 @@ Metadata:
       - Label:
           default: "Tools Instance"
         Parameters:
-          - ToolsInstanceKeyName
+          - KeyName
           - ToolsInstanceCidrIp
       - Label:
           default: "Solution Mode"
         Parameters:
           - SolutionMode
+      - Label:
+          default: "Windows AMI Lookup"
+        Parameters:
+          - ToolsInstanceAMI
     ParameterLabels:
       RedshiftUsername:
         default: "Root Username"
@@ -66,10 +86,12 @@ Metadata:
         default: "Worker Password"
       RedshiftReadOnlyPassword:
         default: "ReadOnly Password"
-      ToolsInstanceKeyName:
-        default: "Tools Instance Key"
+      KeyName:
+        default: "EC2 KeyPair Name"
       ToolsInstanceCidrIp:
         default: "Tools Instance CIDR"
+      ToolsInstanceAMI:
+        default: "String for latest AMI in public SSM"
       SolutionMode:
         default: "Solution Mode"
 
@@ -77,6 +99,8 @@ Mappings:
   Solution:
     Data:
       ID: "SO0035"
+      Version: "%%VERSION%%"
+      AssetBucket: "%%BUCKET_NAME%%"
       SendAnonymousUsageData: true
   RedshiftMappings:
     Usernames:
@@ -88,35 +112,6 @@ Mappings:
       game: "game"
     Cluster:
       Port: 5439
-  ToolsInstanceAMIs:
-    "us-east-1":
-      ami: "ami-21cc045b"
-    "us-east-2":
-      ami: "ami-d4775bb1"
-    "us-west-1":
-      ami: "ami-c44072a4"
-    "us-west-2":
-      ami: "ami-6b3ff913"
-    "ca-central-1":
-      ami: "ami-1ee9517a"
-    "ap-south-1":
-      ami: "ami-742d6e1b"
-    "ap-northeast-2":
-      ami: "ami-90f95cfe"
-    "ap-southeast-1":
-      ami: "ami-2b067d48"
-    "ap-southeast-2":
-      ami: "ami-5f61833d"
-    "ap-northeast-1":
-      ami: "ami-6726f901"
-    "eu-central-1":
-      ami: "ami-8a78c7e5"
-    "eu-west-1":
-      ami: "ami-56ec3e2f"
-    "eu-west-2":
-      ami: "ami-ebbfad8f"
-    "sa-east-1":
-      ami: "ami-a84d33c4"
   S3ConnectorOptionSettings:
     BufferByteSizeLimit:
       Demo: "2048"
@@ -149,7 +144,7 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "vpc"]]
+          Value: !Sub '${AWS::StackName}-vpc'
 
   # Public Subnets
   AnalyticsSubnet1A:
@@ -163,7 +158,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "analytics-subnet-1a"]]
+          Value: !Sub '${AWS::StackName}-analytics-subnet-1a'
       VpcId: !Ref AnalyticsVPC
 
   AnalyticsSubnet1B:
@@ -177,7 +172,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "analytics-subnet-1b"]]
+          Value: !Sub '${AWS::StackName}-analytics-subnet-1b'
       VpcId: !Ref AnalyticsVPC
 
   RedshiftClusterSubnet1A:
@@ -191,7 +186,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "redshift-cluster-subnet-1a"]]
+          Value: !Sub '${AWS::StackName}-redshift-cluster-subnet-1a'
       VpcId: !Ref AnalyticsVPC
 
   RedshiftClusterSubnet1B:
@@ -205,7 +200,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "redshift-cluster-subnet-1b"]]
+          Value: !Sub '${AWS::StackName}-redshift-cluster-subnet-1b'
       VpcId: !Ref AnalyticsVPC
 
   InternetGateway:
@@ -213,7 +208,7 @@ Resources:
     Properties:
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "internet-gateway"]]
+          Value: !Sub '${AWS::StackName}-internet-gateway'
 
   GatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
@@ -227,7 +222,7 @@ Resources:
       VpcId: !Ref AnalyticsVPC
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "public-route-table"]]
+          Value: !Sub '${AWS::StackName}-public-route-table'
 
   PublicSubnetRoute:
     Type: "AWS::EC2::Route"
@@ -272,7 +267,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "s3-connector-subnet-1a"]]
+          Value: !Sub '${AWS::StackName}-s3-connector-subnet-1a'
       VpcId: !Ref AnalyticsVPC
 
   S3ConnectorSubnet1B:
@@ -285,7 +280,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "s3-connector-subnet-1b"]]
+          Value: !Sub '${AWS::StackName}-s3-connector-subnet-1b'
       VpcId: !Ref AnalyticsVPC
 
   RedshiftConnectorSubnet1A:
@@ -298,7 +293,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "redshift-connector-subnet-1a"]]
+          Value: !Sub '${AWS::StackName}-redshift-connector-subnet-1a'
       VpcId: !Ref AnalyticsVPC
 
   RedshiftConnectorSubnet1B:
@@ -311,7 +306,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "redshift-connector-subnet-1b"]]
+          Value: !Sub '${AWS::StackName}-redshift-connector-subnet-1b'
       VpcId: !Ref AnalyticsVPC
 
   CronConnectorSubnet1A:
@@ -324,7 +319,7 @@ Resources:
           - !GetAZs
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "cron-connector-subnet-1a"]]
+          Value: !Sub '${AWS::StackName}-cron-connector-subnet-1a'
       VpcId: !Ref AnalyticsVPC
 
   ElasticIP1A:
@@ -343,7 +338,7 @@ Resources:
       VpcId: !Ref AnalyticsVPC
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "private-route-table-1a"]]
+          Value: !Sub '${AWS::StackName}-private-route-table-1a'
 
   PrivateSubnetRoute1A:
     Type: "AWS::EC2::Route"
@@ -351,9 +346,6 @@ Resources:
       DestinationCidrBlock: "0.0.0.0/0"
       NatGatewayId: !Ref NATGateway1A
       RouteTableId: !Ref PrivateSubnetRouteTable1A
-    DependsOn:
-      - NATGateway1A
-      - PrivateSubnetRouteTable1A
 
   ElasticIP1B:
     Type: "AWS::EC2::EIP"
@@ -371,7 +363,7 @@ Resources:
       VpcId: !Ref AnalyticsVPC
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "private-route-table-1b"]]
+          Value: !Sub '${AWS::StackName}-private-route-table-1b'
 
   PrivateSubnetRoute1B:
     Type: "AWS::EC2::Route"
@@ -379,9 +371,6 @@ Resources:
       DestinationCidrBlock: "0.0.0.0/0"
       NatGatewayId: !Ref NATGateway1B
       RouteTableId: !Ref PrivateSubnetRouteTable1B
-    DependsOn:
-      - NATGateway1B
-      - PrivateSubnetRouteTable1B
 
   S3ConnectorSubnet1ARouteTableAssociation:
     Type: "AWS::EC2::SubnetRouteTableAssociation"
@@ -419,9 +408,12 @@ Resources:
     Properties:
       GroupName: "Intra-VPC Security Group"
       GroupDescription: "Security group that allows inbound from the VPC and outbound to the Internet"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "intra-vpc-security-group"]]
+          Value: !Sub '${AWS::StackName}-intra-vpc-security-group'
       VpcId: !Ref AnalyticsVPC
 
   IntraVPCSecurityGroupIngress:
@@ -448,53 +440,21 @@ Resources:
       RouteTableIds:
         - !Ref PrivateSubnetRouteTable1A
         - !Ref PrivateSubnetRouteTable1B
-      ServiceName: !Join ["", ["com.amazonaws.", !Ref "AWS::Region", ".s3"]]
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
       VpcId: !Ref AnalyticsVPC
 
   # S3 Buckets
   TelemetryBucket:
     Type: "AWS::S3::Bucket"
     DeletionPolicy: "Retain"
-    Properties:
-      BucketName: !Join
-        - "-"
-        - - !Ref "AWS::StackName"
-          - !Ref "AWS::AccountId"
-          - !Ref "AWS::Region"
-          - "telemetry"
 
   ErrorBucket:
     Type: "AWS::S3::Bucket"
     DeletionPolicy: "Retain"
-    Properties:
-      BucketName: !Join
-        - "-"
-        - - !Ref "AWS::StackName"
-          - !Ref "AWS::AccountId"
-          - !Ref "AWS::Region"
-          - "errors"
-
-  CodeBucket:
-    Type: "AWS::S3::Bucket"
-    DeletionPolicy: "Retain"
-    Properties:
-      BucketName: !Join
-        - "-"
-        - - !Ref "AWS::StackName"
-          - !Ref "AWS::AccountId"
-          - !Ref "AWS::Region"
-          - "code"
 
   ConfigBucket:
     Type: "AWS::S3::Bucket"
     DeletionPolicy: "Retain"
-    Properties:
-      BucketName: !Join
-        - "-"
-        - - !Ref "AWS::StackName"
-          - !Ref "AWS::AccountId"
-          - !Ref "AWS::Region"
-          - "config"
 
   # Kinesis
   AnalyticsTelemetryStream:
@@ -503,7 +463,7 @@ Resources:
       ShardCount: 4
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "analytics-telemetry-stream"]]
+          Value: !Sub '${AWS::StackName}-analytics-telemetry-stream'
 
   AnalyticsFileStream:
     Type: "AWS::Kinesis::Stream"
@@ -511,7 +471,7 @@ Resources:
       ShardCount: 2
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "analytics-file-stream"]]
+          Value: !Sub '${AWS::StackName}-analytics-file-stream'
 
   # Redshift
   RedshiftSubnetGroup:
@@ -523,7 +483,7 @@ Resources:
         - !Ref RedshiftClusterSubnet1B
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "redshift-cluster-group"]]
+          Value: !Sub '${AWS::StackName}-redshift-cluster-group'
 
   RedshiftParameterGroup:
     Type: "AWS::Redshift::ClusterParameterGroup"
@@ -532,12 +492,12 @@ Resources:
       ParameterGroupFamily: "redshift-1.0"
       Parameters:
         - ParameterName: "require_ssl"
-          ParameterValue: true
+          ParameterValue: "true"
         - ParameterName: "enable_user_activity_logging"
-          ParameterValue: true
+          ParameterValue: "true"
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "redshift-parameter-group"]]
+          Value: !Sub '${AWS::StackName}-redshift-parameter-group'
 
   RedshiftCluster:
     Type: "AWS::Redshift::Cluster"
@@ -550,7 +510,7 @@ Resources:
       Encrypted: true
       MasterUsername: !Ref RedshiftUsername
       MasterUserPassword: !Ref RedshiftPassword
-      NodeType: "dc1.large"
+      NodeType: !Ref RedshiftInstanceType
       NumberOfNodes: 2
       Port: 5439
       PubliclyAccessible: true
@@ -595,7 +555,7 @@ Resources:
       VpcId: !Ref AnalyticsVPC
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "allow-external-security-group"]]
+          Value: !Sub '${AWS::StackName}-allow-external-security-group'
 
   # IAM
   S3ConnectorRole:
@@ -620,42 +580,44 @@ Resources:
               # Attach inline policy to allow reading from "AnalyticsTelemetryStream" and writing to "AnalyticsFileStream"
               - Effect: "Allow"
                 Action:
-                  - "kinesis:Get*"
+                  - "kinesis:GetRecords"
+                  - "kinesis:GetShardIterator"
                   - "kinesis:DescribeStream"
-                Resource: !GetAtt AnalyticsTelemetryStream.Arn
+                Resource:
+                  - !Sub '${AnalyticsTelemetryStream.Arn}'
               - Effect: "Allow"
                 Action:
                   - "kinesis:PutRecord"
-                Resource: !GetAtt AnalyticsFileStream.Arn
+                Resource:
+                  - !Sub '${AnalyticsFileStream.Arn}'
 
-              # Attach inline policy to allow writing to "analytics-telemetry-bucket" and "analytics-error-bucket"
+              # Attach inline policy to allow writing to Telemetry and Error buckets
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
                 Resource:
-                  - !Join
-                    - ""
-                    - - !GetAtt TelemetryBucket.Arn
-                      - "/*"
-                  - !Join
-                    - ""
-                    - - !GetAtt ErrorBucket.Arn
-                      - "/*"
+                  - !Sub '${TelemetryBucket.Arn}/*'
+                  - !Sub '${ErrorBucket.Arn}/*'
 
               # Attach inline policy to allow writing to DynamoDB
               - Effect: "Allow"
                 Action:
-                  - "dynamodb:*"
-                Resource: !Join
-                  - ""
-                  - - "arn:aws:dynamodb:"
-                    - !Ref "AWS::Region"
-                    - ":"
-                    - !Ref "AWS::AccountId"
-                    - ":"
-                    - "table/"
-                    - !Ref "AWS::StackName"
-                    - "-AnalyticsS3CompoundConnector"
+                  - "dynamodb:BatchGetItem"
+                  - "dynamodb:BatchWriteItem"
+                  - "dynamodb:CreateTable"
+                  - "dynamodb:DeleteItem"
+                  - "dynamodb:DescribeStream"
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:GetShardIterator"
+                  - "dynamodb:ListStreams"
+                  - "dynamodb:ListTables"
+                  - "dynamodb:PutItem"
+                  - "dynamodb:Query"
+                  - "dynamodb:Scan"
+                  - "dynamodb:UpdateItem"
+                  - "dynamodb:UpdateTable"
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-AnalyticsS3CompoundConnector'
 
               # Attach inline policy to allow writing to CloudWatch Logs
               - Effect: "Allow"
@@ -664,20 +626,13 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Join
-                  - ":"
-                  - - "arn:aws:logs"
-                    - !Ref "AWS::Region"
-                    - !Ref "AWS::AccountId"
-                    - "log-group:*"
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
 
               # Attach inline policy to allow writing to CloudWatch Metrics
               - Effect: "Allow"
                 Action:
                   - "cloudwatch:PutMetricData"
-                Resource: !Join
-                  - ""
-                  - - "*"
+                Resource: "*"
 
   S3ConnectorInstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
@@ -710,7 +665,8 @@ Resources:
                   - "kinesis:DescribeStream"
                   - "kinesis:GetRecords"
                   - "kinesis:GetShardIterator"
-                Resource: !GetAtt AnalyticsFileStream.Arn
+                Resource:
+                  - !Sub '${AnalyticsFileStream.Arn}'
 
               # Attach inline policy to allow writing to DynamoDB
               - Effect: "Allow"
@@ -722,12 +678,8 @@ Resources:
                   - "dynamodb:PutItem"
                   - "dynamodb:Scan"
                   - "dynamodb:UpdateItem"
-                Resource: !Join
-                  - ":"
-                  - - "arn:aws:dynamodb"
-                    - !Ref "AWS::Region"
-                    - !Ref "AWS::AccountId"
-                    - "table/*"
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*'
 
               # Attach inline policy to allow reading/writing from S3 configuration bucket
               - Effect: "Allow"
@@ -735,10 +687,7 @@ Resources:
                   - "s3:GetObject"
                   - "s3:PutObject"
                 Resource:
-                  - !Join
-                    - ""
-                    - - !GetAtt ConfigBucket.Arn
-                      - "/*"
+                  - !Sub '${ConfigBucket.Arn}/*'
 
               # Attach inline policy to allow reading/writing from S3 configuration bucket
               - Effect: "Allow"
@@ -746,56 +695,29 @@ Resources:
                   - "s3:GetObject"
                   - "s3:ListBucket"
                 Resource:
-                  - !Join
-                    - ""
-                    - - !GetAtt TelemetryBucket.Arn
-                      - "/*"
-                  - !GetAtt TelemetryBucket.Arn
+                  - !Sub '${TelemetryBucket.Arn}'
+                  - !Sub '${TelemetryBucket.Arn}/*'
 
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
                 Resource:
-                  - !Join
-                    - ""
-                    - - !GetAtt TelemetryBucket.Arn
-                      - "/manifests/*"
+                  - !Sub '${TelemetryBucket.Arn}/manifests/*'
 
               # Attach inline policy to allow Redshift access
               - Effect: "Allow"
                 Action:
                   - "redshift:GetClusterCredentials"
                 Resource:
-                  - !Join
-                    - ""
-                    - - "arn:aws:redshift:"
-                      - !Ref "AWS::Region"
-                      - ":"
-                      - !Ref "AWS::AccountId"
-                      - ":dbname:"
-                      - !Ref RedshiftCluster
-                      - "/"
-                      - !FindInMap [RedshiftMappings, Databases, "analytics"]
-                  - !Join
-                    - ""
-                    - - "arn:aws:redshift:"
-                      - !Ref "AWS::Region"
-                      - ":"
-                      - !Ref "AWS::AccountId"
-                      - ":dbuser:"
-                      - !Ref RedshiftCluster
-                      - "/"
-                      - !FindInMap [RedshiftMappings, Usernames, "worker"]
-                  - !Join
-                    - ""
-                    - - "arn:aws:redshift:"
-                      - !Ref "AWS::Region"
-                      - ":"
-                      - !Ref "AWS::AccountId"
-                      - ":dbuser:"
-                      - !Ref RedshiftCluster
-                      - "/"
-                      - !FindInMap [RedshiftMappings, Usernames, "readonly"]
+                  - !Sub
+                    - 'arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbname:${RedshiftCluster}/${TableName}'
+                    - TableName: !FindInMap [RedshiftMappings, Databases, "analytics"]
+                  - !Sub
+                    - 'arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbuser:${RedshiftCluster}/${Username}'
+                    - Username: !FindInMap [RedshiftMappings, Usernames, "worker"]
+                  - !Sub
+                    - 'arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbuser:${RedshiftCluster}/${Username}'
+                    - Username: !FindInMap [RedshiftMappings, Usernames, "readonly"]
 
               # Attach inline policy to allow writing to CloudWatch Logs
               - Effect: "Allow"
@@ -804,19 +726,15 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Join
-                  - ":"
-                  - - "arn:aws:logs"
-                    - !Ref "AWS::Region"
-                    - !Ref "AWS::AccountId"
-                    - "log-group:*"
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+
               # Attach inline policy to allow writing to CloudWatch Metrics
               - Effect: "Allow"
                 Action:
                   - "cloudwatch:PutMetricData"
-                Resource: !Join
-                  - ""
-                  - - "*"
+                Resource:
+                  - "*"
 
   RedshiftConnectorInstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
@@ -849,33 +767,20 @@ Resources:
                   - "kinesis:DescribeStream"
                   - "kinesis:GetRecords"
                   - "kinesis:GetShardIterator"
-                Resource: !GetAtt AnalyticsFileStream.Arn
+                Resource:
+                  - !Sub '${AnalyticsFileStream.Arn}'
 
               # Attach inline policy to allow Redshift access
               - Effect: "Allow"
                 Action:
                   - "redshift:GetClusterCredentials"
                 Resource:
-                  - !Join
-                    - ""
-                    - - "arn:aws:redshift:"
-                      - !Ref "AWS::Region"
-                      - ":"
-                      - !Ref "AWS::AccountId"
-                      - ":dbname:"
-                      - !Ref RedshiftCluster
-                      - "/"
-                      - !FindInMap [RedshiftMappings, Databases, "analytics"]
-                  - !Join
-                    - ""
-                    - - "arn:aws:redshift:"
-                      - !Ref "AWS::Region"
-                      - ":"
-                      - !Ref "AWS::AccountId"
-                      - ":dbuser:"
-                      - !Ref RedshiftCluster
-                      - "/"
-                      - !FindInMap [RedshiftMappings, Usernames, "worker"]
+                  - !Sub
+                    - 'arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbname:${RedshiftCluster}/${TableName}'
+                    - TableName: !FindInMap [RedshiftMappings, Databases, "analytics"]
+                  - !Sub
+                    - 'arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbuser:${RedshiftCluster}/${Username}'
+                    - Username: !FindInMap [RedshiftMappings, Usernames, "worker"]
 
               # Attach inline policy to allow writing to CloudWatch Logs
               - Effect: "Allow"
@@ -884,12 +789,8 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Join
-                  - ":"
-                  - - "arn:aws:logs"
-                    - !Ref "AWS::Region"
-                    - !Ref "AWS::AccountId"
-                    - "log-group:*"
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
 
               # Attach inline policy to allow writing to CloudWatch Metrics
               - Effect: "Allow"
@@ -897,9 +798,8 @@ Resources:
                   - "cloudwatch:PutMetricData"
                   - "cloudwatch:GetMetricStatistics"
                   - "cloudwatch:ListMetrics"
-                Resource: !Join
-                  - ""
-                  - - "*"
+                Resource:
+                  - "*"
 
   CronConnectorInstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
@@ -930,7 +830,8 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "kinesis:PutRecord"
-                Resource: !GetAtt AnalyticsTelemetryStream.Arn
+                Resource:
+                  - !Sub '${AnalyticsTelemetryStream.Arn}'
 
   AnalyticsApplication:
     Type: AWS::ElasticBeanstalk::Application
@@ -943,11 +844,130 @@ Resources:
       ApplicationName: !Ref AnalyticsApplication
       Description: "S3 Connector"
       SourceBundle:
-        S3Bucket: !Join
-          - "-"
-          - - "%%BUCKET_NAME%%"
-            - !Ref "AWS::Region"
-        S3Key: "gaming-analytics-pipeline/latest/analytics-pipeline-1.0.0.war"
+        S3Bucket: !Sub
+          - '${AssetBucket}-${AWS::Region}'
+          - AssetBucket: !FindInMap [Solution, Data, AssetBucket]
+        S3Key: !Sub
+          - 'gaming-analytics-pipeline/${SolutionVersion}/analytics-pipeline-1.0.0.war'
+          - SolutionVersion: !FindInMap [Solution, Data, Version]
+
+  # Elastic Beanstalk needs to assume a role that gives permissions to update resources.
+  # The role is automatically created if Elastic Beanstalk is launched from the console,
+  # but we can't guarantee that it will be there.
+  # There is a managed policy ARN, but it changes from time to time so we'll recreate
+  # it here.
+  # https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/iam-servicerole.html
+  ElasticBeanstalkServiceRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "Names for Elastic Beanstalk resources are not known."
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "elasticbeanstalk.amazonaws.com"
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                sts:ExternalId: "elasticbeanstalk"
+      Policies:
+        - PolicyName: "ElasticBeanstalkServicePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: "AllowCloudformationOperationsOnElasticBeanstalkStacks"
+                Effect: "Allow"
+                Action:
+                  - "cloudformation:*"
+                Resource:
+                  - "arn:aws:cloudformation:*:*:stack/awseb-*"
+                  - "arn:aws:cloudformation:*:*:stack/eb-"
+              - Sid: "AllowS3OperationsOnElasticBeanstalkBuckets"
+                Effect: "Allow"
+                Action:
+                  - "s3:*"
+                Resource:
+                  - "arn:aws:s3:::elasticbeanstalk-*"
+                  - "arn:aws:s3:::elasticbeanstalk-*/*"
+              - Sid: "AllowOperations"
+                Effect: "Allow"
+                Action:
+                  - "autoscaling:AttachInstances"
+                  - "autoscaling:CreateAutoScalingGroup"
+                  - "autoscaling:CreateLaunchConfiguration"
+                  - "autoscaling:DeleteLaunchConfiguration"
+                  - "autoscaling:DeleteAutoScalingGroup"
+                  - "autoscaling:DeleteScheduledAction"
+                  - "autoscaling:DescribeAccountLimits"
+                  - "autoscaling:DescribeAutoScalingGroups"
+                  - "autoscaling:DescribeAutoScalingInstances"
+                  - "autoscaling:DescribeLaunchConfigurations"
+                  - "autoscaling:DescribeLoadBalancers"
+                  - "autoscaling:DescribeNotificationConfigurations"
+                  - "autoscaling:DescribeScalingActivities"
+                  - "autoscaling:DescribeScheduledActions"
+                  - "autoscaling:DetachInstances"
+                  - "autoscaling:PutScheduledUpdateGroupAction"
+                  - "autoscaling:ResumeProcesses"
+                  - "autoscaling:SetDesiredCapacity"
+                  - "autoscaling:SuspendProcesses"
+                  - "autoscaling:TerminateInstanceInAutoScalingGroup"
+                  - "autoscaling:UpdateAutoScalingGroup"
+                  - "cloudwatch:PutMetricAlarm"
+                  - "ec2:AuthorizeSecurityGroupEgress"
+                  - "ec2:AuthorizeSecurityGroupIngress"
+                  - "ec2:CreateSecurityGroup"
+                  - "ec2:DeleteSecurityGroup"
+                  - "ec2:DescribeAccountAttributes"
+                  - "ec2:DescribeImages"
+                  - "ec2:DescribeInstances"
+                  - "ec2:DescribeKeyPairs"
+                  - "ec2:DescribeSecurityGroups"
+                  - "ec2:DescribeSubnets"
+                  - "ec2:DescribeVpcs"
+                  - "ec2:RevokeSecurityGroupEgress"
+                  - "ec2:RevokeSecurityGroupIngress"
+                  - "ec2:TerminateInstances"
+                  - "ecs:CreateCluster"
+                  - "ecs:DeleteCluster"
+                  - "ecs:DescribeClusters"
+                  - "ecs:RegisterTaskDefinition"
+                  - "elasticbeanstalk:*"
+                  - "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer"
+                  - "elasticloadbalancing:ConfigureHealthCheck"
+                  - "elasticloadbalancing:CreateLoadBalancer"
+                  - "elasticloadbalancing:DeleteLoadBalancer"
+                  - "elasticloadbalancing:DeregisterInstancesFromLoadBalancer"
+                  - "elasticloadbalancing:DescribeInstanceHealth"
+                  - "elasticloadbalancing:DescribeLoadBalancers"
+                  - "elasticloadbalancing:DescribeTargetHealth"
+                  - "elasticloadbalancing:RegisterInstancesWithLoadBalancer"
+                  - "iam:ListRoles"
+                  - "iam:PassRole"
+                  - "logs:CreateLogGroup"
+                  - "logs:PutRetentionPolicy"
+                  - "rds:DescribeDBInstances"
+                  - "rds:DescribeOrderableDBInstanceOptions"
+                  - "s3:CopyObject"
+                  - "s3:GetObject"
+                  - "s3:GetObjectAcl"
+                  - "s3:GetObjectMetadata"
+                  - "s3:ListBucket"
+                  - "s3:listBuckets"
+                  - "s3:ListObjects"
+                  - "sns:CreateTopic"
+                  - "sns:GetTopicAttributes"
+                  - "sns:ListSubscriptionsByTopic"
+                  - "sns:Subscribe"
+                  - "sqs:GetQueueAttributes"
+                  - "sqs:GetQueueUrl"
+                Resource:
+                  - "*"
 
   s3ConnectorConfigurationTemplate:
     Type: AWS::ElasticBeanstalk::ConfigurationTemplate
@@ -957,10 +977,10 @@ Resources:
       OptionSettings:
         - Namespace: "aws:autoscaling:asg"
           OptionName: "MinSize"
-          Value: 2
+          Value: "2"
         - Namespace: "aws:autoscaling:asg"
           OptionName: "MaxSize"
-          Value: 4
+          Value: "4"
         - Namespace: "aws:autoscaling:trigger"
           OptionName: "MeasureName"
           Value: "CPUUtilization"
@@ -969,19 +989,22 @@ Resources:
           Value: "Percent"
         - Namespace: "aws:autoscaling:trigger"
           OptionName: "LowerThreshold"
-          Value: 20
+          Value: "20"
         - Namespace: "aws:autoscaling:trigger"
           OptionName: "UpperThreshold"
-          Value: 80
+          Value: "80"
         - Namespace: "aws:autoscaling:launchconfiguration"
           OptionName: SecurityGroups
           Value: !Ref IntraVPCSecurityGroup
         - Namespace: "aws:autoscaling:launchconfiguration"
           OptionName: IamInstanceProfile
           Value: !Ref S3ConnectorInstanceProfile
+        - Namespace: "aws:autoscaling:launchconfiguration"
+          OptionName: "EC2KeyName"
+          Value: !Ref KeyName
         - Namespace: "aws:ElasticBeanstalk:environment"
           OptionName: "ServiceRole"
-          Value: "arn:aws:iam::208800812415:role/aws-elasticbeanstalk-service-role"
+          Value: !Sub '${ElasticBeanstalkServiceRole.Arn}'
         - Namespace: "aws:autoscaling:launchconfiguration"
           OptionName: InstanceType
           Value: "t2.small"
@@ -993,10 +1016,7 @@ Resources:
           Value: !Ref AnalyticsVPC
         - Namespace: "aws:ec2:vpc"
           OptionName: "Subnets"
-          Value: !Join
-            - ", "
-            - - !Ref S3ConnectorSubnet1A
-              - !Ref S3ConnectorSubnet1B
+          Value: !Sub '${S3ConnectorSubnet1A}, ${S3ConnectorSubnet1B}'
         - Namespace: "aws:ec2:vpc"
           OptionName: "ELBScheme"
           Value: "internal"
@@ -1020,7 +1040,7 @@ Resources:
           Value: !Ref "AWS::Region"
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "kinesis_app_name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "AnalyticsS3CompoundConnector"]]
+          Value: !Sub '${AWS::StackName}-AnalyticsS3CompoundConnector'
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "kinesis_file_stream"
           Value: !Ref AnalyticsFileStream
@@ -1048,11 +1068,7 @@ Resources:
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "send_anonymous_data"
           Value: !FindInMap [Solution, Data, "SendAnonymousUsageData"]
-      PlatformArn: !Join
-        - ""
-        - - "arn:aws:elasticbeanstalk:"
-          - !Ref "AWS::Region"
-          - "::platform/Tomcat 8 with Java 8 running on 64bit Amazon Linux"
+      PlatformArn: !Sub 'arn:aws:elasticbeanstalk:${AWS::Region}::platform/Tomcat 8 with Java 8 running on 64bit Amazon Linux'
 
   s3ConnectorEnvironment:
     Type: AWS::ElasticBeanstalk::Environment
@@ -1071,10 +1087,10 @@ Resources:
       OptionSettings:
         - Namespace: "aws:autoscaling:asg"
           OptionName: "MinSize"
-          Value: 2
+          Value: "2"
         - Namespace: "aws:autoscaling:asg"
           OptionName: "MaxSize"
-          Value: 2
+          Value: "2"
         - Namespace: "aws:autoscaling:trigger"
           OptionName: "MeasureName"
           Value: "CPUUtilization"
@@ -1083,19 +1099,22 @@ Resources:
           Value: "Percent"
         - Namespace: "aws:autoscaling:trigger"
           OptionName: "LowerThreshold"
-          Value: 20
+          Value: "20"
         - Namespace: "aws:autoscaling:trigger"
           OptionName: "UpperThreshold"
-          Value: 80
+          Value: "80"
         - Namespace: "aws:autoscaling:launchconfiguration"
           OptionName: SecurityGroups
           Value: !Ref IntraVPCSecurityGroup
         - Namespace: "aws:autoscaling:launchconfiguration"
           OptionName: IamInstanceProfile
           Value: !Ref RedshiftConnectorInstanceProfile
+        - Namespace: "aws:autoscaling:launchconfiguration"
+          OptionName: "EC2KeyName"
+          Value: !Ref KeyName
         - Namespace: "aws:ElasticBeanstalk:environment"
           OptionName: "ServiceRole"
-          Value: "arn:aws:iam::208800812415:role/aws-elasticbeanstalk-service-role"
+          Value: !Sub '${ElasticBeanstalkServiceRole.Arn}'
         - Namespace: "aws:autoscaling:launchconfiguration"
           OptionName: InstanceType
           Value: "t2.small"
@@ -1107,10 +1126,7 @@ Resources:
           Value: !Ref AnalyticsVPC
         - Namespace: "aws:ec2:vpc"
           OptionName: "Subnets"
-          Value: !Join
-            - ", "
-            - - !Ref RedshiftConnectorSubnet1A
-              - !Ref RedshiftConnectorSubnet1B
+          Value: !Sub '${RedshiftConnectorSubnet1A}, ${RedshiftConnectorSubnet1B}'
         - Namespace: "aws:ec2:vpc"
           OptionName: "ELBScheme"
           Value: "internal"
@@ -1125,7 +1141,7 @@ Resources:
           Value: "/health"
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "kinesis_app_name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "AnalyticsRedshiftConnector"]]
+          Value: !Sub '${AWS::StackName}-AnalyticsRedshiftConnector'
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "ConnectorType"
           Value: "redshift"
@@ -1143,15 +1159,9 @@ Resources:
           Value: !Ref RedshiftCluster
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "redshift_jdbc"
-          Value: !Join
-            - ""
-            - - "jdbc:redshift://"
-              - !GetAtt RedshiftCluster.Endpoint.Address
-              - ":"
-              - !GetAtt RedshiftCluster.Endpoint.Port
-              - "/"
-              - !FindInMap [RedshiftMappings, Databases, "analytics"]
-              - "?ssl=true"
+          Value: !Sub
+            - 'jdbc:redshift://${RedshiftCluster.Endpoint.Address}:${RedshiftCluster.Endpoint.Port}/${TableName}?ssl=true'
+            - TableName: !FindInMap [RedshiftMappings, Databases, "analytics"]
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "s3_config_bucket"
           Value: !Ref ConfigBucket
@@ -1179,11 +1189,7 @@ Resources:
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "send_anonymous_data"
           Value: !FindInMap [Solution, Data, "SendAnonymousUsageData"]
-      PlatformArn: !Join
-        - ""
-        - - "arn:aws:elasticbeanstalk:"
-          - !Ref "AWS::Region"
-          - "::platform/Tomcat 8 with Java 8 running on 64bit Amazon Linux"
+      PlatformArn: !Sub 'arn:aws:elasticbeanstalk:${AWS::Region}::platform/Tomcat 8 with Java 8 running on 64bit Amazon Linux'
 
   RedshiftConnectorEnvironment:
     DependsOn: CronConnectorEnvironment
@@ -1206,9 +1212,12 @@ Resources:
         - Namespace: "aws:autoscaling:launchconfiguration"
           OptionName: IamInstanceProfile
           Value: !Ref CronConnectorInstanceProfile
+        - Namespace: "aws:autoscaling:launchconfiguration"
+          OptionName: "EC2KeyName"
+          Value: !Ref KeyName
         - Namespace: "aws:ElasticBeanstalk:environment"
           OptionName: "ServiceRole"
-          Value: "arn:aws:iam::208800812415:role/aws-elasticbeanstalk-service-role"
+          Value: !Sub '${ElasticBeanstalkServiceRole.Arn}'
         - Namespace: "aws:autoscaling:launchconfiguration"
           OptionName: InstanceType
           Value: "t2.small"
@@ -1244,15 +1253,9 @@ Resources:
           Value: !Ref RedshiftCluster
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "redshift_jdbc"
-          Value: !Join
-            - ""
-            - - "jdbc:redshift://"
-              - !GetAtt RedshiftCluster.Endpoint.Address
-              - ":"
-              - !GetAtt RedshiftCluster.Endpoint.Port
-              - "/"
-              - !FindInMap [RedshiftMappings, Databases, "analytics"]
-              - "?ssl=true"
+          Value: !Sub
+            - 'jdbc:redshift://${RedshiftCluster.Endpoint.Address}:${RedshiftCluster.Endpoint.Port}/${TableName}?ssl=true'
+            - TableName: !FindInMap [RedshiftMappings, Databases, "analytics"]
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "redshift_worker_username"
           Value: !FindInMap [RedshiftMappings, Usernames, "worker"]
@@ -1274,11 +1277,7 @@ Resources:
         - Namespace: "aws:elasticbeanstalk:application:environment"
           OptionName: "send_anonymous_data"
           Value: !FindInMap [Solution, Data, "SendAnonymousUsageData"]
-      PlatformArn: !Join
-        - ""
-        - - "arn:aws:elasticbeanstalk:"
-          - !Ref "AWS::Region"
-          - "::platform/Tomcat 8 with Java 8 running on 64bit Amazon Linux"
+      PlatformArn: !Sub 'arn:aws:elasticbeanstalk:${AWS::Region}::platform/Tomcat 8 with Java 8 running on 64bit Amazon Linux'
 
   CronConnectorEnvironment:
     Type: AWS::ElasticBeanstalk::Environment
@@ -1309,11 +1308,12 @@ Resources:
     Type: "AWS::Lambda::Function"
     Properties:
       Code:
-        S3Bucket: !Join
-          - "-"
-          - - "%%BUCKET_NAME%%"
-            - !Ref "AWS::Region"
-        S3Key: "gaming-analytics-pipeline/latest/custom-resource.zip"
+        S3Bucket: !Sub
+          - '${AssetBucket}-${AWS::Region}'
+          - AssetBucket: !FindInMap [Solution, Data, AssetBucket]
+        S3Key: !Sub
+          - 'gaming-analytics-pipeline/${SolutionVersion}/custom-resource.zip'
+          - SolutionVersion: !FindInMap [Solution, Data, Version]
       Handler: "custom_resource/custom_resource.lambda_handler"
       Runtime: python2.7
       Timeout: 30
@@ -1323,11 +1323,15 @@ Resources:
           - !Ref IntraVPCSecurityGroup
         SubnetIds:
           - !Ref CustomResourceSubnet
+      Environment:
+        Variables:
+          SOLUTION_UUID: !GetAtt CreateUniqueID.UUID
+          SOLUTION_ID: !FindInMap [Solution, Data, ID]
+          SOLUTION_VERSION: !FindInMap [Solution, Data, Version]
 
   CustomResource:
     Type: "Custom::CustomResource"
     DependsOn:
-      - RedshiftCluster
       - RedshiftClusterSubnet1A
       - RedshiftClusterSubnet1ARouteTableAssociation
       - RedshiftClusterSubnet1B
@@ -1355,7 +1359,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "custom-resource-subnet-1a"]]
+          Value: !Sub '${AWS::StackName}-custom-resource-subnet-1a'
       VpcId: !Ref AnalyticsVPC
 
   CustomResourceSubnetRouteTable:
@@ -1364,7 +1368,7 @@ Resources:
       VpcId: !Ref AnalyticsVPC
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "custom-resource-route-table"]]
+          Value: !Sub '${AWS::StackName}-custom-resource-route-table'
 
   CustomResourceSubnetRoute:
     Type: "AWS::EC2::Route"
@@ -1380,8 +1384,6 @@ Resources:
 
   CustomResourceNGW:
     Type: "AWS::EC2::NatGateway"
-    DependsOn:
-      - CustomResourceNGWEIP
     Properties:
       AllocationId: !GetAtt CustomResourceNGWEIP.AllocationId
       SubnetId: !Ref RedshiftClusterSubnet1A
@@ -1396,17 +1398,16 @@ Resources:
   ToolsInstance:
     Type: "AWS::EC2::Instance"
     Properties:
-      # Microsoft Windows Server 2016 with SQL Server 2017 Express
-      ImageId: !FindInMap [ToolsInstanceAMIs, !Ref "AWS::Region", "ami"]
+      ImageId: !Ref ToolsInstanceAMI
       InstanceType: "t2.micro"
       IamInstanceProfile: !Ref ToolsInstanceProfile
       SecurityGroupIds:
         - !Ref RDPAccessSecurityGroup
       SubnetId: !Ref AnalyticsSubnet1A
-      KeyName: !Ref ToolsInstanceKeyName
+      KeyName: !Ref KeyName
       Tags:
         - Key: "Name"
-          Value: !Join ["-", [!Ref "AWS::StackName", "tools-instance"]]
+          Value: !Sub '${AWS::StackName}-tools-instance'
       UserData:
         Fn::Base64:
           !Join
@@ -1432,23 +1433,39 @@ Resources:
         config:
           files:
             "C:\\tmp\\extract-tools.ps1":
-              source: !Join
-                - ""
-                - - "https://%%BUCKET_NAME%%-"
-                  - !Ref "AWS::Region"
-                  - ".s3.amazonaws.com/gaming-analytics-pipeline/latest/extract-tools.ps1"
+              source: !Sub
+                - 'https://${AssetBucket}-${AWS::Region}.s3.amazonaws.com/gaming-analytics-pipeline/${SolutionVersion}/extract-tools.ps1'
+                - AssetBucket: !FindInMap [Solution, Data, AssetBucket]
+                  SolutionVersion: !FindInMap [Solution, Data, Version]
             "C:\\tmp\\data-generator.zip":
-              source: !Join
-                - ""
-                - - "https://%%BUCKET_NAME%%-"
-                  - !Ref "AWS::Region"
-                  - ".s3.amazonaws.com/gaming-analytics-pipeline/latest/data-generator.zip"
+              source: !Sub
+                - 'https://${AssetBucket}-${AWS::Region}.s3.amazonaws.com/gaming-analytics-pipeline/${SolutionVersion}/data-generator.zip'
+                - AssetBucket: !FindInMap [Solution, Data, AssetBucket]
+                  SolutionVersion: !FindInMap [Solution, Data, Version]
             "C:\\tmp\\heatmap-generator.zip":
-              source: !Join
-                - ""
-                - - "https://%%BUCKET_NAME%%-"
-                  - !Ref "AWS::Region"
-                  - ".s3.amazonaws.com/gaming-analytics-pipeline/latest/heatmap-generator.zip"
+              source: !Sub
+                - 'https://${AssetBucket}-${AWS::Region}.s3.amazonaws.com/gaming-analytics-pipeline/${SolutionVersion}/heatmap-generator.zip'
+                - AssetBucket: !FindInMap [Solution, Data, AssetBucket]
+                  SolutionVersion: !FindInMap [Solution, Data, Version]
+            "C:\\Users\\Administrator\\Desktop\\demo.txt":
+              content: !Join
+                - "\r\n"
+                - - "# Open powershell"
+                  - "powershell"
+                  - ""
+                  - "# Navigate to the data generator and install dependencies"
+                  - "cd C:\\Users\\Administrator\\Desktop\\data-generator\\"
+                  - "pip install -r .\\requirements.txt"
+                  - ""
+                  - "# Generate data"
+                  - !Sub "python .\\publish_data.py -r ${AWS::Region} -s ${AnalyticsTelemetryStream} -i .\\heatmap-sample-data.txt"
+                  - ""
+                  - "# Navigate to the heatmap generator and install dependencies"
+                  - "cd C:\\Users\\Administrator\\Desktop\\heatmap-generator\\"
+                  - "pip install -r .\\requirements.txt"
+                  - "\n"
+                  - "# Run the heatmap generation script"
+                  - !Sub "python .\\generate_heatmap.py --db_host ${RedshiftCluster.Endpoint.Address} -r ${AWS::Region} -c ${RedshiftCluster} -e player_death"
 
   ToolsInstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
@@ -1473,7 +1490,7 @@ Resources:
           PolicyDocument:
             Statement:
 
-              # Attach inline policy to allow reading from "AnalyticsFileStream"
+              # Attach inline policy to allow writing to "AnalyticsFileStream"
               - Effect: "Allow"
                 Action:
                   - "kinesis:PutRecords"
@@ -1484,36 +1501,15 @@ Resources:
                 Action:
                   - "redshift:GetClusterCredentials"
                 Resource:
-                  - !Join
-                    - ""
-                    - - "arn:aws:redshift:"
-                      - !Ref "AWS::Region"
-                      - ":"
-                      - !Ref "AWS::AccountId"
-                      - ":dbname:"
-                      - !Ref RedshiftCluster
-                      - "/"
-                      - !FindInMap [RedshiftMappings, Databases, "analytics"]
-                  - !Join
-                    - ""
-                    - - "arn:aws:redshift:"
-                      - !Ref "AWS::Region"
-                      - ":"
-                      - !Ref "AWS::AccountId"
-                      - ":dbuser:"
-                      - !Ref RedshiftCluster
-                      - "/"
-                      - !FindInMap [RedshiftMappings, Usernames, "worker"]
-                  - !Join
-                    - ""
-                    - - "arn:aws:redshift:"
-                      - !Ref "AWS::Region"
-                      - ":"
-                      - !Ref "AWS::AccountId"
-                      - ":dbuser:"
-                      - !Ref RedshiftCluster
-                      - "/"
-                      - !FindInMap [RedshiftMappings, Usernames, "readonly"]
+                  - !Sub
+                    - 'arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbname:${RedshiftCluster}/${TableName}'
+                    - TableName: !FindInMap [RedshiftMappings, Databases, "analytics"]
+                  - !Sub
+                    - 'arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbuser:${RedshiftCluster}/${Username}'
+                    - Username: !FindInMap [RedshiftMappings, Usernames, "worker"]
+                  - !Sub
+                    - 'arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbuser:${RedshiftCluster}/${Username}'
+                    - Username: !FindInMap [RedshiftMappings, Usernames, "readonly"]
 
   RDPAccessSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
@@ -1521,12 +1517,15 @@ Resources:
       GroupDescription: "Allows RDP access to tools host"
       VpcId: !Ref AnalyticsVPC
       SecurityGroupIngress:
-        IpProtocol: "tcp"
-        FromPort: "3389"
-        ToPort: "3389"
-        CidrIp: !Ref ToolsInstanceCidrIp
+        - IpProtocol: "tcp"
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: !Ref ToolsInstanceCidrIp
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"
 
-  # Metrics Gathering
+  # Solution Helper
   SolutionHelper:
     Type: "AWS::Lambda::Function"
     Properties:
@@ -1534,13 +1533,14 @@ Resources:
       Role: !GetAtt SolutionHelperRole.Arn
       Description: "Helper function for generating a UUID"
       Code:
-        S3Bucket: !Join
-          - "-"
-          - - "solutions"
-            - !Ref "AWS::Region"
+        S3Bucket: !Sub 'solutions-${AWS::Region}'
         S3Key: "library/solution-helper/v3/solution-helper.zip"
       Runtime: "python2.7"
       Timeout: 300
+      Environment:
+        Variables:
+          SOLUTION_ID: !FindInMap [Solution, Data, ID]
+          SOLUTION_VERSION: !FindInMap [Solution, Data, Version]
 
   SolutionHelperRole:
     Type: "AWS::IAM::Role"
@@ -1578,25 +1578,10 @@ Outputs:
   CustomResourceLambdaArn:
     Value: !GetAtt CustomResourceLambda.Arn
   GenerateDataCommand:
-    Value: !Join
-      - " "
-      - - "python .\\publish_data.py"
-        - "-r"
-        - !Ref "AWS::Region"
-        - "-s"
-        - !Ref AnalyticsTelemetryStream
-        - "-i"
-        - ".\\heatmap-sample-data.txt"
+    Value: !Sub 'python .\\publish_data.py -r ${AWS::Region} -s ${AnalyticsTelemetryStream} -i .\\heatmap-sample-data.txt'
   GenerateHeatmapCommand:
-    Value: !Join
-      - " "
-      - - "python .\\generate_heatmap.py"
-        - "--db_host"
-        - !GetAtt RedshiftCluster.Endpoint.Address
-        - "-r"
-        - !Ref "AWS::Region"
-        - "-c"
-        - !Ref RedshiftCluster
-        - "-e player_death"
+    Value: !Sub 'python .\\generate_heatmap.py --db_host ${RedshiftCluster.Endpoint.Address} -r ${AWS::Region} -c ${RedshiftCluster} -e player_death'
+  SolutionVersion:
+    Value: !FindInMap [Solution, Data, Version]
   SolutionUUID:
     Value: !GetAtt CreateUniqueID.UUID

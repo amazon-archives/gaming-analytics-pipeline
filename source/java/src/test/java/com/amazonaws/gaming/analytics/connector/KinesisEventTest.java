@@ -128,6 +128,25 @@ public class KinesisEventTest
         parseEventEnforceSuccess(missingLevelId);
         parseEventEnforceSuccess(missingPositionX);
         parseEventEnforceSuccess(missingPositionY);
+        
+        String invalidAppName = "{\"app_version\":\"1.0.0\",\"event_version\":\"1.0\",\"position_x\":556,\"app_name\":\"SampleGameWith\\\"Quotes\\\"\",\"client_id\":\"d57faa2b-9bfd-4502-a7b7-a43cb365f8f2\",\"position_y\":521,\"event_id\":\"91650ce5-825a-4e90-ab22-174a4fb2da79\",\"level_id\":\"test_level\",\"event_timestamp\":1508872163135,\"event_type\":\"test_event\"}";
+        String invalidAppVersion = "{\"app_version\":\"1.0.0!@#\",\"event_version\":\"1.0\",\"position_x\":556,\"app_name\":\"SampleGame\",\"client_id\":\"d57faa2b-9bfd-4502-a7b7-a43cb365f8f2\",\"position_y\":521,\"event_id\":\"91650ce5-825a-4e90-ab22-174a4fb2da79\",\"level_id\":\"test_level\",\"event_timestamp\":1508872163135,\"event_type\":\"test_event\"}";
+        String invalidEventVersion = "{\"app_version\":\"; DROP TABLE sql_injection;\",\"event_version\":\"1.0\",\"position_x\":556,\"app_name\":\"SampleGame\",\"client_id\":\"d57faa2b-9bfd-4502-a7b7-a43cb365f8f2\",\"position_y\":521,\"event_id\":\"91650ce5-825a-4e90-ab22-174a4fb2da79\",\"level_id\":\"test_level\",\"event_timestamp\":1508872163135,\"event_type\":\"test_event\"}";
+        String invalidEventId = "{\"app_version\":\"1.0.0\",\"event_version\":\"1.0\",\"position_x\":556,\"app_name\":\"SampleGame\",\"client_id\":\"d57faa2b-9bfd-4502-a7b7-a43cb365f8f2\",\"position_y\":521,\"event_id\":\"91650ce5:825a:4e90:ab22:174a4fb2da79\",\"level_id\":\"test_level\",\"event_timestamp\":1508872163135,\"event_type\":\"test_event\"}";
+        String invalidEventType = "{\"app_version\":\"1.0.0\",\"event_version\":\"1.0\",\"position_x\":556,\"app_name\":\"SampleGame\",\"client_id\":\"d57faa2b-9bfd-4502-a7b7-a43cb365f8f2\",\"position_y\":521,\"event_id\":\"91650ce5-825a-4e90-ab22-174a4fb2da79\",\"level_id\":\"test_level\",\"event_timestamp\":1508872163135,\"event_type\":\"test@event\"}";
+        String invalidClientId = "{\"app_version\":\"1.0.0\",\"event_version\":\"1.0\",\"position_x\":556,\"app_name\":\"SampleGame\",\"client_id\":\"d57faa2b-9bfd-4502#a7b7-a43cb365f8f2\",\"position_y\":521,\"event_id\":\"91650ce5-825a-4e90-ab22-174a4fb2da79\",\"level_id\":\"test_level\",\"event_timestamp\":1508872163135,\"event_type\":\"test_event\"}";
+        String invalidLevelId = "{\"app_version\":\"1.0.0\",\"event_version\":\"1.0\",\"position_x\":556,\"app_name\":\"SampleGame\",\"client_id\":\"d57faa2b-9bfd-4502-a7b7-a43cb365f8f2\",\"position_y\":521,\"event_id\":\"91650ce5-825a-4e90-ab22-174a4fb2da79\",\"level_id\":\"'test_level'\",\"event_timestamp\":1508872163135,\"event_type\":\"test_event\"}";
+        
+        parseEventEnforceFailure(invalidAppName);
+        parseEventEnforceFailure(invalidAppVersion);
+        parseEventEnforceFailure(invalidEventVersion);
+        parseEventEnforceFailure(invalidEventId);
+        parseEventEnforceFailure(invalidEventType);
+        parseEventEnforceFailure(invalidClientId);
+        parseEventEnforceFailure(invalidLevelId);
+        
+        String goodEvent = "{\"app_version\":\"1.0.0\",\"event_version\":\"1.0\",\"position_x\":556,\"app_name\":\"Sample Game\",\"client_id\":\"d57faa2b-9bfd-4502-a7b7-a43cb365f8f2\",\"position_y\":521,\"event_id\":\"91650ce5-825a-4e90-ab22-174a4fb2da79\",\"level_id\":\"test_level\",\"event_timestamp\":1508872163135,\"event_type\":\"test_event\"}";
+        parseEventEnforceSuccess(goodEvent);
     }
     
     @Test

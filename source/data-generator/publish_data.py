@@ -1,11 +1,11 @@
 ######################################################################################################################
 # Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved. *
-# 
+#
 # Licensed under the Amazon Software License (the "License"). You may not use this file except in compliance *
 # with the License. A copy of the License is located at *
-# 
+#
 # http://aws.amazon.com/asl/ *
-# 
+#
 # or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES *
 # OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions *
 # and limitations under the License. *
@@ -93,6 +93,9 @@ def send_event_file(kinesis_client, input_filename, stream_name, batch_size):
     with open(input_filename, 'r') as infile:
         for line in infile:
             event_dict = json.loads(line)
+
+            # Replaces sample data timestamp with current time
+            event_dict['event_timestamp'] = int(time.time() * 1000)
             records.append(event_dict)
 
             # Check if we have enough records to create a new batch

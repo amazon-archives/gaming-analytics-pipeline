@@ -1,5 +1,5 @@
 # AWS Gaming Analytics Pipeline
-A methodology to allow customers to ingest, store, and analyze gameplay telemetry in near real-time.
+A solution to create an analytics pipeline for games
 https://aws.amazon.com/answers/big-data/gaming-analytics-pipeline/
 
 ## OS (Ubuntu) Environment Setup

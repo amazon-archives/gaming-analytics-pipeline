@@ -15,6 +15,8 @@ package com.amazonaws.gaming.analytics.connector;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.amazonaws.gaming.analytics.common.AppConfiguration;
 import com.amazonaws.gaming.analytics.common.exception.TelemetryEventParseException;
@@ -55,7 +57,6 @@ public class KinesisEvent
     public static final int EVENT_TYPE_MAX_LENGTH;
     public static final int CLIENT_ID_MAX_LENGTH;
     public static final int LEVEL_ID_MAX_LENGTH;
-
     static
     {
         APP_NAME_MAX_LENGTH = AppConfiguration.INSTANCE.getInt("event.app_name_max_length", 64);
@@ -66,6 +67,10 @@ public class KinesisEvent
         CLIENT_ID_MAX_LENGTH = AppConfiguration.INSTANCE.getInt("event.client_id_max_length", 36);
         LEVEL_ID_MAX_LENGTH = AppConfiguration.INSTANCE.getInt("event.level_id_max_length", 64);
     }
+    
+    //Per https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html, Pattern is thread-safe
+    public static final String RESTRICTED_CHARSET_REGEX = "[-a-zA-z0-9_. ]*";
+    public static final Pattern RESTRICTED_CHARSET = Pattern.compile(RESTRICTED_CHARSET_REGEX);
 
     private String appName;
     private String appVersion;
@@ -142,13 +147,20 @@ public class KinesisEvent
 
         //validate and sanitize all the incoming values
         this.appName = sanitizeStringNode(jsonRoot, APP_NAME_JSON_KEY, APP_NAME_MAX_LENGTH, true);
+        validateStringNode(this.appName, RESTRICTED_CHARSET);
         this.appVersion = sanitizeStringNode(jsonRoot, APP_VERSION_JSON_KEY, APP_VERSION_MAX_LENGTH, false);
+        validateStringNode(this.appVersion, RESTRICTED_CHARSET);
         this.eventVersion = sanitizeStringNode(jsonRoot, EVENT_VERSION_JSON_KEY, EVENT_VERSION_MAX_LENGTH, true);
+        validateStringNode(this.eventVersion, RESTRICTED_CHARSET);
         this.eventId = sanitizeStringNode(jsonRoot, EVENT_ID_JSON_KEY, EVENT_ID_MAX_LENGTH, true);
+        validateStringNode(this.eventId, RESTRICTED_CHARSET);
         this.eventType = sanitizeStringNode(jsonRoot, EVENT_TYPE_JSON_KEY, EVENT_TYPE_MAX_LENGTH, true);
+        validateStringNode(this.eventType, RESTRICTED_CHARSET);
         this.eventTimestamp = sanitizeUnsignedIntegerNode(jsonRoot, EVENT_TIMESTAMP_JSON_KEY, true);
         this.clientId = sanitizeStringNode(jsonRoot, CLIENT_ID_JSON_KEY, CLIENT_ID_MAX_LENGTH, true);
+        validateStringNode(this.clientId, RESTRICTED_CHARSET);
         this.levelId = sanitizeStringNode(jsonRoot, LEVEL_ID_JSON_KEY, LEVEL_ID_MAX_LENGTH, false);
+        validateStringNode(this.levelId, RESTRICTED_CHARSET);
         this.positionX = sanitizeDoubleNode(jsonRoot, POSITION_X_JSON_KEY, false);
         this.positionY = sanitizeDoubleNode(jsonRoot, POSITION_Y_JSON_KEY, false);
         
@@ -199,6 +211,17 @@ public class KinesisEvent
         }
 
         return value;
+    }
+    
+    private void validateStringNode(String value, Pattern validPattern) throws TelemetryEventValidationException
+    {
+    	Matcher matcher = validPattern.matcher(value);
+    	if(!matcher.matches())
+    	{
+    		throw new TelemetryEventValidationException("The supplied value \"" + value + "\" does not match the required " +
+    				"validation regular expression \"" + RESTRICTED_CHARSET_REGEX + "\"");
+    			
+    	}
     }
 
     /**

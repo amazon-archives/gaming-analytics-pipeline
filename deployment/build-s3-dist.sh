@@ -14,51 +14,74 @@
 
 # Check to see if input has been provided:
 if [ -z "$1" ]; then
-    echo "Please provide the base source bucket name where the lambda code will eventually reside.\nFor example: ./build-s3-dist.sh solutions"
+    echo "Error: Asset bucket not provided."
     exit 1
 fi
 
-# Build source
+if [ -z "$2" ]; then
+    echo "Error: Solution version not provided."
+    exit 1
+fi
+
+export solution_name="gaming-analytics-pipeline"
+
+# Create `dist` directory
 echo "Staring to build distribution"
 echo "export deployment_dir=`pwd`"
-export deployment_dir=`pwd`
-echo "mkdir -p dist"
-mkdir -p dist
+export initial_dir=`pwd`
+export deployment_dir="$initial_dir/deployment"
+export dist_dir="$initial_dir/deployment/dist"
+export source_dir="$initial_dir/source"
+echo "Clean up $dist_dir"
+rm -rf $dist_dir
+echo "mkdir -p $dist_dir"
+mkdir -p "$dist_dir"
 
-echo "Creating CFN template"
+# Copy CFT & swap parameters
+cp "$deployment_dir/$solution_name.template" "$dist_dir/$solution_name.template"
 echo "Updating code source bucket in template with $1"
-REPLACE="s/%%BUCKET_NAME%%/$1/g"
-cp "./gaming-analytics-pipeline.yaml" "./dist/gaming-analytics-pipeline.yaml"
-sed -i '' -e $REPLACE "./dist/gaming-analytics-pipeline.yaml"
+replace="s/%%BUCKET_NAME%%/$1/g"
+echo "sed -i '' -e $replace $dist_dir/$solution_name.template"
+sed -i '' -e $replace "$dist_dir/$solution_name.template"
 
+echo -e "\n Updating version number in the template with $2"
+replace="s/%%VERSION%%/$2/g"
+echo "sed -i '' -e $replace $dist_dir/$solution_name.template"
+sed -i '' -e $replace "$dist_dir/$solution_name.template"
+
+# Build Java Project
 echo "Building Java Component"
-mvn clean install -f "../source/java/pom.xml"
-cp "../source/java/target/analytics-pipeline-1.0.0.war" "./dist/analytics-pipeline-1.0.0.war"
+mvn clean install -f "$source_dir/java/pom.xml"
+cp "$source_dir/java/target/analytics-pipeline-1.0.0.war" "$dist_dir/analytics-pipeline-1.0.0.war"
 echo "Cleaning up Java build"
-mvn clean -f "../source/java/pom.xml"
+mvn clean -f "$source_dir/java/pom.xml"
 
+# Build Custom Resource
 echo "Building CFN custom resource"
 echo "Creating Python virtual environment"
-TMP="./dist/tmp"
+TMP="$dist_dir/tmp"
 virtualenv "$TMP/env"
 source "$TMP/env/bin/activate"
+
 echo "Installing custom-resource to virtual environment"
-pip install "../source/custom-resource" --target="$TMP/env/lib/python2.7/site-packages/"
-echo "Creating lambda zip package"
+pip install "$source_dir/custom-resource" --target="$TMP/env/lib/python2.7/site-packages/"
+
+echo "Creating Lambda zip package"
 cd "$TMP/env/lib/python2.7/site-packages/"
-zip -r9 "./custom-resource.zip" .
-zip -q -d "./custom-resource.zip" pip*
-zip -q -d "./custom-resource.zip" easy*
-cp "./custom-resource.zip" "$deployment_dir/dist/custom-resource.zip"
-cd $deployment_dir
+zip -q -r9 "$dist_dir/custom-resource.zip" *
+zip -q -d "./custom-resource.zip" "pip*" "easy*" "setup*" "wheel*" "pkg_resources*"
+cd "$initial_dir"
 echo "Cleaning up Python virtual environment"
 rm -r "$TMP"
 
+# Build Demo Assets
 echo "Building data generators"
-cp "../source/tools-host/extract-tools.ps1" "./dist/extract-tools.ps1"
-cd "../source/data-generator"
-zip -r9 "$deployment_dir/dist/data-generator.zip" .
-cd "../heatmap-generator"
-zip -r9 "$deployment_dir/dist/heatmap-generator.zip" .
+cp "$source_dir/tools-host/extract-tools.ps1" "$dist_dir/extract-tools.ps1"
+cd "$source_dir/data-generator"
+zip -r9 "$dist_dir/data-generator.zip" .
+cd "$source_dir/heatmap-generator"
+zip -r9 "$dist_dir/heatmap-generator.zip" .
+
+cd "$initial_dir"
 
 echo "Completed building distribution"
