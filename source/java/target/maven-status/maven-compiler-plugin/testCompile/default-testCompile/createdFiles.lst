@@ -1,6 +1,0 @@
-com/amazonaws/gaming/analytics/common/HexUtilTest.class
-com/amazonaws/gaming/analytics/common/DecoderUtilTest.class
-com/amazonaws/gaming/analytics/connector/KinesisEventTest.class
-com/amazonaws/gaming/analytics/connector/NullEmitter.class
-com/amazonaws/gaming/analytics/connector/NullBuffer.class
-com/amazonaws/gaming/analytics/common/AppConfigurationTest.class

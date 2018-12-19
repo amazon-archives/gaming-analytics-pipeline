@@ -325,6 +325,8 @@ Resources:
   ElasticIP1A:
     Type: "AWS::EC2::EIP"
     DependsOn: GatewayAttachment
+    Properties:
+      Domain: "vpc"
 
   NATGateway1A:
     Type: "AWS::EC2::NatGateway"
@@ -347,9 +349,12 @@ Resources:
       NatGatewayId: !Ref NATGateway1A
       RouteTableId: !Ref PrivateSubnetRouteTable1A
 
+  # 12/14/2018 - GAP-120 - VPC EIP only
   ElasticIP1B:
     Type: "AWS::EC2::EIP"
     DependsOn: GatewayAttachment
+    Properties:
+      Domain: "vpc"
 
   NATGateway1B:
     Type: "AWS::EC2::NatGateway"
